@@ -1,10 +1,12 @@
+#!/usr/bin/env python3
 import os
-import psutil
-import subprocess
-import time
 import platform
+import subprocess
 import sys
+import time
 from datetime import datetime
+
+import psutil
 
 # ANSI Color codes for main script output (not for fzf)
 RESET = "\033[0m"

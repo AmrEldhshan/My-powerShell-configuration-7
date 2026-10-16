@@ -1,0 +1,30 @@
+# Normalize line endings so files don't churn between LF and CRLF.
+# Everything is stored as LF in the repository and checked out as LF.
+* text=auto eol=lf
+
+# Shell / script sources are always LF.
+*.ps1      text eol=lf
+*.psm1     text eol=lf
+*.psd1     text eol=lf
+*.py       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.json     text eol=lf
+*.md       text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Never touch line endings in binary assets.
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.icns     binary
+*.woff     binary
+*.woff2    binary
+*.ttf      binary
+*.exe      binary
+*.dll      binary
+*.zip      binary
+*.tar.gz   binary

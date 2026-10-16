@@ -3,6 +3,8 @@
 ![PowerShell](https://img.shields.io/badge/PowerShell-7+-blue.svg)
 ![Oh My Posh](https://img.shields.io/badge/Oh%20My%20Posh-Custom%20Themes-green.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
+[![PowerShell CI](https://github.com/Amr-Khaled-Ahmed/My-powerShell-configuration-7/actions/workflows/powershell.yml/badge.svg)](https://github.com/Amr-Khaled-Ahmed/My-powerShell-configuration-7/actions/workflows/powershell.yml)
+[![Python CI](https://github.com/Amr-Khaled-Ahmed/My-powerShell-configuration-7/actions/workflows/python.yml/badge.svg)](https://github.com/Amr-Khaled-Ahmed/My-powerShell-configuration-7/actions/workflows/python.yml)
 
 ![PowerShell Configuration Screenshot](images/Screenshot%202025-09-29%20213508.png)
 
@@ -13,14 +15,15 @@ A comprehensive and highly customized PowerShell 7+ configuration profile design
 - [🌟 Features](#-features)
 - [🚀 Quick Start](#-quick-start)
 - [📦 Prerequisites](#-prerequisites)
-- [⚙️ Installation](#️-installation)
+- [⚙️ Installation](#-installation)
 - [🎨 Customization](#-customization)
 - [🔧 Functions & Aliases](#-functions--aliases)
-- [🐍 Python Tools](#-python-tools)
-- [🛠️ Modules](#️-modules)
+- [🐍 Python Tools](#-python-tools-collection)
+- [🛠️ Modules](#-modules)
 - [🎯 Usage Examples](#-usage-examples)
 - [🔍 Detailed Features](#-detailed-features)
 - [🐛 Troubleshooting](#-troubleshooting)
+- [🧪 Tests & Quality](#-tests--quality)
 - [🤝 Contributing](#-contributing)
 - [📄 License](#-license)
 
@@ -39,7 +42,7 @@ A comprehensive and highly customized PowerShell 7+ configuration profile design
 - **Intelligent Tab Completion** - Context-aware suggestions
 
 ### 🔧 **Comprehensive Toolset**
-- **200+ Custom Functions** - Covering development, system admin, and DevOps
+- **70+ Custom Functions** - Covering development, system admin, and DevOps
 - **Cross-Platform Support** - Works on Windows, Linux, and macOS
 - **Module Management** - Automatic loading of optional modules
 - **Error Handling** - Robust error handling and user feedback
@@ -218,10 +221,10 @@ The repository includes a collection of standalone Python utilities located in t
 |------|-------------|------|--------|
 | **`drawlogo.py`** | Creates graphical logos and designs | CLI Application | Graphic design and logo creation |
 | **`networkTools.py`** | Network scanning and analysis tools | System Utility | Network diagnostics and monitoring |
-| **`task bar.py`** | Taskbar customization and management | CLI Application | Windows taskbar manipulation |
-| **`taskmanager.py`** | Enhanced task manager interface | CLI Application | Process management |
+| **`task_bar.py`** | Taskbar customization and management | CLI Application | Windows taskbar manipulation |
+| **`task_manager.py`** | Enhanced task manager interface | CLI Application | Process management |
 | **`video_downloader.py`** | Download videos from various platforms | Utility | Media content downloading |
-| **`wifi detector.py`** | WiFi network detection and analysis | System Utility | Wireless network scanning |
+| **`wifi_detector.py`** | WiFi network detection and analysis | System Utility | Wireless network scanning |
 
 ### 🚀 Running Python Tools
 
@@ -234,10 +237,10 @@ cd python
 # Run individual tools
 python drawlogo.py
 python networkTools.py
-python "task bar.py"
-python taskmanager.py
+python task_bar.py
+python task_manager.py
 python video_downloader.py
-python "wifi detector.py"
+python wifi_detector.py
 ```
 
 ### 🔧 PowerShell Integration Functions
@@ -263,16 +266,16 @@ function Start-PythonTool {
             $toolPath = Join-Path $pythonToolsPath "networkTools.py"
         }
         "taskbar" {
-            $toolPath = Join-Path $pythonToolsPath "task bar.py"
+            $toolPath = Join-Path $pythonToolsPath "task_bar.py"
         }
         "taskmanager" {
-            $toolPath = Join-Path $pythonToolsPath "taskmanager.py"
+            $toolPath = Join-Path $pythonToolsPath "task_manager.py"
         }
         "videodownloader" {
             $toolPath = Join-Path $pythonToolsPath "video_downloader.py"
         }
         "wifidetector" {
-            $toolPath = Join-Path $pythonToolsPath "wifi detector.py"
+            $toolPath = Join-Path $pythonToolsPath "wifi_detector.py"
         }
         default {
             Write-Error "Unknown Python tool: $ToolName"
@@ -531,7 +534,7 @@ python --version
 cd python
 
 # Run tool directly
-python "task bar.py"
+python task_bar.py
 ```
 
 ### **Debug Mode**
@@ -547,28 +550,47 @@ Remove-Item $PROFILE
 # Restart PowerShell
 ```
 
+## 🧪 Tests & Quality
+
+| Path | Purpose |
+|------|---------|
+| `Profile.ps1` | The PowerShell profile itself |
+| `tests/Profile.Tests.ps1` | Pester suite: parsing, structure, README accuracy |
+| `python/` | Standalone Python tools |
+| `python/tests/` | pytest suite: filenames, compilation, repo invariants |
+| `python/requirements.txt` | Optional dependencies for the Python tools |
+| `ruff.toml` | Pinned lint configuration |
+| `CONTRIBUTING.md` | Development setup and conventions |
+| `CHANGELOG.md` | Notable changes |
+
 ## 🤝 Contributing
 
-We welcome contributions! Here's how you can help:
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for the
+full guidelines.
 
-1. **Fork the Repository**
-2. **Create a Feature Branch**
-3. **Make Your Changes**
-4. **Test Thoroughly**
-5. **Submit a Pull Request**
+### **Run the checks locally**
+
+```powershell
+# PowerShell
+Invoke-Pester ./tests
+Invoke-ScriptAnalyzer -Path ./Profile.ps1 -Severity Error
+
+# Python
+pip install ruff pytest
+ruff check python
+pytest python/tests -v
+```
+
+CI runs these same checks on every push and pull request.
 
 ### **Development Guidelines**
 - Follow PowerShell best practices
 - Include comprehensive help documentation
 - Add error handling for all functions
 - Test on both Windows and Linux if possible
-- For Python tools, ensure they work with Python 3.6+
-
-### **Adding New Python Tools**
-1. Place your Python script in the `/python/` directory
-2. Update the PowerShell integration functions
-3. Include proper documentation
-4. Test the tool independently
+- For Python tools, target Python 3.10+ and use `snake_case` filenames without spaces
+- Keep `README.md` in sync: CI fails if it documents a command or file that does not exist
+- Do not commit CRLF line endings; `.gitattributes` enforces LF
 
 ## 📄 License
 

@@ -1,5 +1,8 @@
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel 
+#!/usr/bin/env python3
 import sys
+
+from PyQt5.QtWidgets import QApplication, QLabel, QMainWindow
+
 
 class CustomTaskbar(QMainWindow):
     def __init__(self):

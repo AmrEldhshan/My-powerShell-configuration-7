@@ -1,4 +1,6 @@
-from colorama import init, Fore, Style
+#!/usr/bin/env python3
+from colorama import Fore, Style, init
+
 
 def print_hacker_logo():
     # Initialize colorama to ensure compatibility with PowerShell

@@ -1,6 +1,8 @@
+#!/usr/bin/env python3
+import logging
 import os
 import subprocess
-import logging
+
 import speedtest  # For network speed test
 
 # ANSI codes for custom color
@@ -81,7 +83,7 @@ def display_welcome_message():
     print(f"{CYAN}Your gateway to mastering network management and troubleshooting.{RESET}")
     print(f"{YELLOW}Explore the tools below to diagnose, configure, and optimize your network.{RESET}")
     pause()
-    
+
 def display_main_menu():
     """Display the main menu."""
     clear_screen()

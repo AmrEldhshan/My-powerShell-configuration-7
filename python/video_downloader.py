@@ -1,7 +1,8 @@
-from yt_dlp import YoutubeDL
-import os
-import sys
+#!/usr/bin/env python3
 import logging
+import os
+
+from yt_dlp import YoutubeDL
 
 # Configure logging
 logging.basicConfig(filename='video_downloader.log', level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -154,7 +155,9 @@ def download_playlist(url, output_path=".", proxy=None, speed_limit=None):
         logging.error(f"Error downloading playlist: {e}")
         print(f"An error occurred: {e}")
 
-def download_subtitles(url, output_path=".", languages=['en']):
+def download_subtitles(url, output_path=".", languages=None):
+    if languages is None:
+        languages = ['en']
     try:
         # Set options for yt-dlp (subtitles)
         ydl_opts = {
