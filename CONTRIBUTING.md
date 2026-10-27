@@ -58,11 +58,22 @@ editor rather than committing CRLF changes.
 1. Add the function to `Profile.ps1`.
 2. If it is user-facing, add a row to the matching table in the
    **Functions & Aliases** section of `README.md`.
-3. Add it to the built-in `Get-HelpMenu`-style help list if it is a headline
-   command.
+3. Add it to the built-in `help-menu` list if it is a headline command.
 
 The README table is verified by tests. Documenting a command that does not
 exist, or renaming a function without updating the README, will fail CI.
+
+### Startup performance
+
+The profile is loaded on every shell, so keep the startup path cheap:
+
+- Do not spawn external processes (Python, `git`, `winget`, ...) at load time.
+- Use `Write-ZeroAccessDetail` for optional startup chatter so it only appears
+  with `ZEROACCESS_VERBOSE=1`.
+- Import modules directly; do not add `Get-Module -ListAvailable` probes to the
+  startup path.
+- Cache expensive generated scripts under `~/.config/zeroaccess/cache`.
+- Verify with `pstats` (or `Measure-Command { . $PROFILE }`) before and after.
 
 ### Adding a Python tool
 

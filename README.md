@@ -34,6 +34,14 @@ A comprehensive and highly customized PowerShell 7+ configuration profile design
 - **Multiple Themes** - Switch between themes with interactive FZF selection
 - **Terminal Icons** - Visual file type indicators
 - **Syntax Highlighting** - Color-coded command output
+- **Instant startup banner** - Pure PowerShell, no Python subprocess on launch
+
+### 🚀 **Fast Startup**
+- **Cached Oh My Posh init** - The generated init script is cached and reused
+- **No blocking module scans** - Modules are imported directly instead of probing
+- **Lazy extras** - PSGitHub is opt-in, and the banner needs no Python at all
+- **Load statistics** - Run `pstats` to see how long the profile took
+- **Tunable** - Set `ZEROACCESS_QUIET=1` for a completely silent shell
 
 ### ⚡ **Productivity Boosters**
 - **FZF Integration** - Fuzzy finding for commands, history, and files
@@ -53,6 +61,25 @@ A comprehensive and highly customized PowerShell 7+ configuration profile design
 - **System Maintenance** - Automated cleanup and optimization
 - **Security Tools** - Password strength testing and file integrity checks
 
+### 🎛️ **Startup Switches**
+
+Set these environment variables before launching `pwsh` to tune startup:
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `ZEROACCESS_QUIET` | unset | Suppress the banner and all informational output |
+| `ZEROACCESS_VERBOSE` | unset | Show per-module and Oh My Posh load details |
+| `ZEROACCESS_CLEAR` | unset | Clear the screen when the profile loads |
+| `ZEROACCESS_NO_OMP` | unset | Skip Oh My Posh entirely |
+| `ZEROACCESS_EXTRA_MODULES` | unset | Also import the optional `PSGitHub` module |
+
+```powershell
+# Example: fastest possible shell
+$env:ZEROACCESS_QUIET = 1
+$env:ZEROACCESS_NO_OMP = 1
+pwsh
+```
+
 ## 🚀 Quick Start
 
 ### 1. **Clone the Repository**
@@ -68,7 +95,7 @@ Copy-Item $PROFILE "$PROFILE.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
 
 ### 3. **Install the Profile**
 ```powershell
-Copy-Item .\Microsoft.PowerShell_profile.ps1 $PROFILE -Force
+Copy-Item .\Profile.ps1 $PROFILE -Force
 ```
 
 ### 4. **Reload PowerShell**
@@ -131,6 +158,8 @@ theme
 ```
 
 This opens an FZF interface to browse and select from all available Oh My Posh themes.
+The choice is saved to `~/.config/zeroaccess/theme.txt` (no profile rewriting) and is
+picked up automatically by new shells. `$env:POSH_THEME` always takes precedence.
 
 ### **Customizing Functions**
 Edit the profile directly:
@@ -155,6 +184,16 @@ Set-Alias -Name ma -Value my-alias
 | `ll` | List with details | `ll` |
 | `lsr` | List recursively | `lsr ~/projects` |
 | `which` | Find command location | `which git` |
+| `mkcd` | Create a directory and enter it | `mkcd ~/projects/new` |
+
+### ⚡ **Profile & Helpers**
+| Command | Description | Example |
+|---------|-------------|---------|
+| `h` | Interactive command help | `h` |
+| `reload` | Reload the profile in place | `reload` |
+| `ep` | Edit the profile | `ep` |
+| `pstats` | Show load time and profile stats | `pstats` |
+| `theme` | Switch Oh My Posh theme | `theme` |
 
 ### 🔍 **File Operations**
 | Command | Description | Example |
@@ -415,7 +454,7 @@ python "C:\path\to\repo\python\drawlogo.py"
 - **posh-git** - Git status in prompt
 
 ### **Optional Modules**
-- **PSGitHub** - GitHub integration
+- **PSGitHub** - GitHub integration (set `ZEROACCESS_EXTRA_MODULES=1` to load it)
 - **Z** - Directory jumping
 - **PSScriptAnalyzer** - Code quality analysis
 
@@ -476,7 +515,8 @@ Measure-CodeQuality -Path ./src -Fix
 - Dynamic theme detection and fallback
 - Multiple theme location support
 - Interactive theme switcher with FZF
-- Automatic profile persistence
+- Cached init script for near-instant subsequent startups
+- Theme persisted to `~/.config/zeroaccess/theme.txt` (override with `$env:POSH_THEME`)
 
 ### **PSReadLine Enhancements**
 - Predictive IntelliSense

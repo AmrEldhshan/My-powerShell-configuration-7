@@ -1,7 +1,7 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
 
 BeforeAll {
-    $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
+    $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
     $script:ProfilePath = Join-Path $script:RepoRoot 'Profile.ps1'
     $script:ReadmePath = Join-Path $script:RepoRoot 'README.md'
     $script:ProfileSource = Get-Content -Raw $script:ProfilePath
@@ -39,7 +39,7 @@ Describe 'Profile.ps1 structure' {
 
     It 'never uses Write-Host for errors' {
         $hits = [regex]::Matches(
-            $script:ProfileSource, '(?im)^\s*Write-Host\s+.*-ForegroundColor\s+Red.*\$\_')
+            $script:ProfileSource, '(?im)^\s*Write-Host\s+.*-ForegroundColor\s+Red.*\$_')
 
         $hits.Count | Should -Be 0 -Because 'errors should go through Write-Error or throw'
     }

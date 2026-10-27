@@ -1,58 +1,149 @@
 # ==============================================
-# PowerShell Profile Enhancement
+# ZeroAccess PowerShell Profile
 # ==============================================
+# Fast-startup switches (set these before launching pwsh):
+#   ZEROACCESS_QUIET=1         suppress banner and summary output
+#   ZEROACCESS_VERBOSE=1       show per-module load details
+#   ZEROACCESS_CLEAR=1         clear the screen on load
+#   ZEROACCESS_NO_OMP=1        skip Oh My Posh entirely
+#   ZEROACCESS_EXTRA_MODULES=1 also load optional PSGitHub module
 
-# Clear the screen for a fresh start
-Clear-Host
-$profileLoadStart = Get-Date
-Write-Host "Loading PowerShell profile..." -ForegroundColor DarkGray
+$script:ZeroAccessStart = [System.Diagnostics.Stopwatch]::StartNew()
+$script:ZeroAccessQuiet = $env:ZEROACCESS_QUIET -in @('1', 'true', 'yes', 'on')
+$script:ZeroAccessVerbose = $env:ZEROACCESS_VERBOSE -in @('1', 'true', 'yes', 'on')
+$script:ZeroAccessConfigDir = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.config/zeroaccess'
+$script:ZeroAccessThemeFile = Join-Path $script:ZeroAccessConfigDir 'theme.txt'
+$script:ZeroAccessCacheDir = Join-Path $script:ZeroAccessConfigDir 'cache'
 
-# ----------------------------------------------
-# Oh My Posh Initialization
-# ----------------------------------------------
-try {
-    # Check if oh-my-posh is available
-    if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
-        # Try multiple possible theme locations with more specific order
-        $possibleThemePaths = @(
-            "${env:POSH_THEMES_PATH}\atomicBit.omp.json",
-            "${env:USERPROFILE}\.config\powershell\atomicBit.omp.json",
-            "${env:USERPROFILE}\AppData\Local\Programs\oh-my-posh\themes\atomicBit.omp.json",
-            "${env:ProgramFiles}\oh-my-posh\themes\atomicBit.omp.json",
-            "${env:LocalAppData}\Programs\oh-my-posh\themes\atomicBit.omp.json"
-        )
+if ($env:ZEROACCESS_CLEAR -in @('1', 'true', 'yes', 'on')) {
+    Clear-Host
+}
 
-        $ompConfig = $possibleThemePaths | Where-Object {
-            $_ -and (Test-Path $_)
-        } | Select-Object -First 1
-
-        if ($ompConfig) {
-            oh-my-posh init pwsh --config $ompConfig | Invoke-Expression
-            Write-Host "Oh My Posh initialized with $ompConfig" -ForegroundColor DarkGray
-        } else {
-            Write-Warning "Oh My Posh theme not found in any of these locations:`n$($possibleThemePaths -join "`n")"
-            # Fallback to default theme
-            oh-my-posh init pwsh | Invoke-Expression
-            Write-Host "Loaded default Oh My Posh theme" -ForegroundColor DarkGray
-        }
-    } else {
-        Write-Warning "oh-my-posh not found. Please install it with:"
-        Write-Host "  winget install JanDeDobbeleer.OhMyPosh -s winget" -ForegroundColor Cyan
-        Write-Host "  or" -ForegroundColor DarkGray
-        Write-Host "  scoop install https://github.com/JanDeDobbeleer/oh-my-posh/releases/latest/download/oh-my-posh.json" -ForegroundColor Cyan
+function Write-ZeroAccessInfo {
+    param(
+        [string]$Message,
+        [string]$Color = 'DarkGray'
+    )
+    if (-not $script:ZeroAccessQuiet) {
+        Write-Host $Message -ForegroundColor $Color
     }
-} catch {
-    Write-Error "Failed to initialize oh-my-posh: $_"
-    Write-Host "Continuing without Oh My Posh..." -ForegroundColor Yellow
+}
+
+function Write-ZeroAccessDetail {
+    param(
+        [string]$Message,
+        [string]$Color = 'DarkGray'
+    )
+    if ($script:ZeroAccessVerbose -and -not $script:ZeroAccessQuiet) {
+        Write-Host $Message -ForegroundColor $Color
+    }
+}
+
+function Get-ZeroAccessThemePath {
+    $candidates = [System.Collections.Generic.List[string]]::new()
+    if ($env:POSH_THEME) { $candidates.Add($env:POSH_THEME) }
+    if (Test-Path -LiteralPath $script:ZeroAccessThemeFile) {
+        $saved = Get-Content -LiteralPath $script:ZeroAccessThemeFile -Raw -ErrorAction SilentlyContinue
+        if ($saved) { $candidates.Add($saved.Trim()) }
+    }
+    foreach ($path in @(
+            (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.config/powershell/atomicBit.omp.json'),
+            $(if ($env:POSH_THEMES_PATH) { Join-Path $env:POSH_THEMES_PATH 'atomicBit.omp.json' }),
+            $(if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Programs/oh-my-posh/themes/atomicBit.omp.json' }),
+            $(if ($env:ProgramFiles) { Join-Path $env:ProgramFiles 'oh-my-posh/themes/atomicBit.omp.json' }),
+            $(if ($env:POSH_THEMES_PATH) { Join-Path $env:POSH_THEMES_PATH 'smoothie.omp.json' })
+        )) {
+        if ($path) { $candidates.Add($path) }
+    }
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate }
+    }
+    return $null
+}
+
+function Get-ZeroAccessThemeDirectory {
+    foreach ($path in @(
+            $env:POSH_THEMES_PATH,
+            (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.config/powershell/themes'),
+            (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.poshthemes'),
+            $(if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Programs/oh-my-posh/themes' }),
+            $(if ($env:ProgramFiles) { Join-Path $env:ProgramFiles 'oh-my-posh/themes' })
+        )) {
+        if ($path -and (Test-Path -LiteralPath $path)) { return $path }
+    }
+    return $null
+}
+
+function Get-WindowsTerminalSettingsPath {
+    if (-not $env:LOCALAPPDATA) { return $null }
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA 'Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState/settings.json'),
+        (Join-Path $env:LOCALAPPDATA 'Packages/Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe/LocalState/settings.json'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft/Windows Terminal/settings.json')
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    return $null
+}
+
+# ----------------------------------------------
+# Oh My Posh Initialization (cached for fast startup)
+# ----------------------------------------------
+if ($env:ZEROACCESS_NO_OMP -notin @('1', 'true', 'yes', 'on')) {
+    try {
+        $ompCommand = Get-Command oh-my-posh -ErrorAction SilentlyContinue
+        if ($ompCommand) {
+            $ompConfig = Get-ZeroAccessThemePath
+            $null = New-Item -ItemType Directory -Path $script:ZeroAccessCacheDir -Force -ErrorAction SilentlyContinue
+
+            $cacheKey = "$($ompCommand.Source)|$($ompCommand.Version)|$ompConfig"
+            if ($ompConfig -and (Test-Path -LiteralPath $ompConfig)) {
+                $cacheKey += "|$((Get-Item -LiteralPath $ompConfig).LastWriteTimeUtc.Ticks)"
+            }
+            $sha = [System.Security.Cryptography.SHA256]::Create()
+            try {
+                $hash = -join ($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($cacheKey)) |
+                        ForEach-Object { $_.ToString('x2') })
+            } finally {
+                $sha.Dispose()
+            }
+            $cacheFile = Join-Path $script:ZeroAccessCacheDir "omp-$($hash.Substring(0, 16)).ps1"
+
+            if (Test-Path -LiteralPath $cacheFile) {
+                . $cacheFile
+            } else {
+                $ompInit = if ($ompConfig) {
+                    & oh-my-posh init pwsh --config $ompConfig
+                } else {
+                    Write-ZeroAccessInfo 'Oh My Posh theme not found; using the default theme.' 'DarkYellow'
+                    & oh-my-posh init pwsh
+                }
+                $initText = $ompInit | Out-String
+                if ($initText.Trim()) {
+                    Set-Content -LiteralPath $cacheFile -Value $initText -Encoding UTF8 -ErrorAction SilentlyContinue
+                    Get-ChildItem -LiteralPath $script:ZeroAccessCacheDir -Filter 'omp-*.ps1' -ErrorAction SilentlyContinue |
+                        Where-Object { $_.FullName -ne $cacheFile } |
+                        Remove-Item -Force -ErrorAction SilentlyContinue
+                    Invoke-Expression $initText
+                }
+            }
+
+            $themeName = if ($ompConfig) { Split-Path -Leaf $ompConfig } else { 'default' }
+            Write-ZeroAccessDetail "Oh My Posh ready ($themeName)"
+        } else {
+            Write-ZeroAccessInfo 'oh-my-posh not found. Install with: winget install JanDeDobbeleer.OhMyPosh -s winget' 'DarkYellow'
+        }
+    } catch {
+        Write-Warning "Failed to initialize oh-my-posh: $_"
+    }
 }
 
 # ----------------------------------------------
 # PSReadLine Configuration
 # ----------------------------------------------
 try {
-    if (-not (Get-Module PSReadLine -ErrorAction SilentlyContinue)) {
-        Import-Module PSReadLine -ErrorAction Stop
-    }
+    Import-Module PSReadLine -ErrorAction Stop
 
     # Enhanced command prediction and history
     Set-PSReadLineOption -PredictionSource HistoryAndPlugin
@@ -103,64 +194,34 @@ try {
 "@
     }
 
-    Write-Host "PSReadLine configured with enhanced features" -ForegroundColor DarkGray
+    Write-ZeroAccessDetail 'PSReadLine configured with enhanced features'
 } catch {
     Write-Warning "Failed to configure PSReadLine: $_"
-    Write-Host "Basic command line editing will be available" -ForegroundColor Yellow
+    Write-ZeroAccessInfo 'Basic command line editing will be available' 'DarkYellow'
 }
 
 # ----------------------------------------------
 # Optional Module Imports
 # ----------------------------------------------
-$optionalModules = @(
-    @{
-        Name = "Terminal-Icons";
-        Command = {
-            Import-Module Terminal-Icons -ErrorAction SilentlyContinue
-            if (Get-Module Terminal-Icons) {
-                Write-Host "[+] Loaded module Terminal-Icons" -ForegroundColor DarkGray
-            }
-        }
-    },
-    @{
-        Name = "PSFzf";
-        Command = {
-            Import-Module PSFzf -ErrorAction SilentlyContinue
-            if (Get-Module PSFzf) {
-                Set-PsFzfOption -PSReadlineChordProvider 'Ctrl+f' -PSReadlineChordReverseHistory 'Ctrl+r'
-                Write-Host "[+] Loaded module PSFzf with Ctrl+f/Ctrl+r bindings" -ForegroundColor DarkGray
-            }
-        }
-    },
-    @{
-        Name = "PSGitHub";
-        Command = {
-            Import-Module PSGitHub -ErrorAction SilentlyContinue
-            if (Get-Module PSGitHub) {
-                Write-Host "[+] Loaded module PSGitHub" -ForegroundColor DarkGray
-            }
-        }
-    },
-    @{
-        Name = "posh-git";
-        Command = {
-            Import-Module posh-git -ErrorAction SilentlyContinue
-            if (Get-Module posh-git) {
-                Write-Host "[+] Loaded module posh-git" -ForegroundColor DarkGray
-            }
-        }
-    }
-)
+$optionalModules = @('Terminal-Icons', 'PSFzf', 'posh-git')
+if ($env:ZEROACCESS_EXTRA_MODULES -in @('1', 'true', 'yes', 'on')) {
+    $optionalModules += 'PSGitHub'
+}
 
-foreach ($module in $optionalModules) {
+foreach ($moduleName in $optionalModules) {
+    if (Get-Module -Name $moduleName) { continue }
     try {
-        if (Get-Module -ListAvailable -Name $module.Name) {
-            & $module.Command
-        } else {
-            Write-Host "[ ] Module $($module.Name) not available" -ForegroundColor DarkGray
+        Import-Module -Name $moduleName -ErrorAction Stop
+        if ($moduleName -eq 'PSFzf') {
+            try {
+                Set-PsFzfOption -PSReadlineChordProvider 'Ctrl+f' -PSReadlineChordReverseHistory 'Ctrl+r'
+            } catch {
+                Write-ZeroAccessInfo "PSFzf loaded, but key bindings could not be set: $_" 'DarkYellow'
+            }
         }
+        Write-ZeroAccessDetail "[+] $moduleName"
     } catch {
-        Write-Warning "Failed to load module $($module.Name): $_"
+        Write-ZeroAccessDetail "[ ] $moduleName not available"
     }
 }
 
@@ -360,76 +421,45 @@ function theme {
     param()
 
     if (-not (Get-Command oh-my-posh -ErrorAction SilentlyContinue)) {
-        Write-Warning "Oh My Posh is not installed. Please install it first."
-        Write-Host "Install with: winget install JanDeDobbeleer.OhMyPosh -s winget" -ForegroundColor Cyan
+        Write-Warning 'Oh My Posh is not installed. Install with: winget install JanDeDobbeleer.OhMyPosh -s winget'
         return
     }
 
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
-        Write-Warning "FZF is not installed. Please install it for interactive theme selection."
-        Write-Host "Install with: winget install fzf" -ForegroundColor Cyan
+        Write-Warning 'FZF is not installed. Install with: winget install fzf'
         return
     }
 
-    # Determine themes location with more comprehensive search
-    $themesPath = $null
-    $possibleThemesPaths = @(
-        $env:POSH_THEMES_PATH,
-        "${env:USERPROFILE}\.config\powershell\themes",
-        "${env:USERPROFILE}\AppData\Local\Programs\oh-my-posh\themes",
-        "${env:ProgramFiles}\oh-my-posh\themes",
-        "${env:LocalAppData}\Programs\oh-my-posh\themes",
-        "${env:USERPROFILE}\.poshthemes"
-    )
-
-    foreach ($path in $possibleThemesPaths) {
-        if ($path -and (Test-Path $path)) {
-            $themesPath = $path
-            break
-        }
-    }
-
+    $themesPath = Get-ZeroAccessThemeDirectory
     if (-not $themesPath) {
-        Write-Error "Could not find Oh My Posh themes directory. Searched in:`n$($possibleThemesPaths -join "`n")"
+        Write-Error 'Could not find an Oh My Posh themes directory. Set POSH_THEMES_PATH to override.'
         return
     }
 
     Write-Host "Loading themes from $themesPath..." -ForegroundColor Cyan
 
     try {
-        # Get all theme files with full path
-        $themeFiles = Get-ChildItem -Path $themesPath -Filter "*.omp.json" -File | Select-Object -ExpandProperty FullName
+        $themeFiles = Get-ChildItem -LiteralPath $themesPath -Filter '*.omp.json' -File -ErrorAction Stop |
+            Select-Object -ExpandProperty FullName
 
-        if ($themeFiles.Count -eq 0) {
+        if (-not $themeFiles) {
             Write-Error "No themes found in $themesPath"
             return
         }
 
         $selectedTheme = $themeFiles | fzf --height 70% --reverse --prompt='Select Theme > ' --preview='oh-my-posh --config {} print primary'
+        if (-not $selectedTheme) { return }
 
-        if ($selectedTheme) {
-            Write-Host "Applying theme: $(Split-Path $selectedTheme -Leaf)" -ForegroundColor Green
+        $selectedTheme = $selectedTheme.Trim()
+        Write-Host "Applying theme: $(Split-Path -Leaf $selectedTheme)" -ForegroundColor Green
 
-            # Apply the theme
-            oh-my-posh init pwsh --config $selectedTheme | Invoke-Expression
+        $env:POSH_THEME = $selectedTheme
+        & oh-my-posh init pwsh --config $selectedTheme | Invoke-Expression
 
-            # Offer to update profile for persistence
-            $updateProfile = Read-Host "Do you want to save this theme as your default? (y/n)"
-            if ($updateProfile -eq "y") {
-                $themeVarLine = "`$env:POSH_THEME = '$selectedTheme'"
-
-                $profileContent = Get-Content $PROFILE -ErrorAction SilentlyContinue
-
-                if ($profileContent -match '\$env:POSH_THEME\s*=') {
-                    # Update existing POSH_THEME line
-                    $profileContent = $profileContent -replace '\$env:POSH_THEME\s*=.*', $themeVarLine
-                    $profileContent | Set-Content $PROFILE
-                } else {
-                    # Add new POSH_THEME line at the beginning of the file
-                    @($themeVarLine) + $profileContent | Set-Content $PROFILE
-                }
-                Write-Host "Profile updated. Theme will be applied on new shells." -ForegroundColor Green
-            }
+        if ((Read-Host 'Save this theme as your default? (y/n)') -eq 'y') {
+            $null = New-Item -ItemType Directory -Path $script:ZeroAccessConfigDir -Force -ErrorAction SilentlyContinue
+            Set-Content -LiteralPath $script:ZeroAccessThemeFile -Value $selectedTheme -Encoding UTF8
+            Write-Host "Saved. New shells will use $(Split-Path -Leaf $selectedTheme)." -ForegroundColor Green
         }
     } catch {
         Write-Error "Error in theme switcher: $_"
@@ -688,7 +718,7 @@ Function ports {
 }
 
 Function size {
-    Get-ChildItem -Recurse -ErrorAction SilentlyContinue |
+    Get-ChildItem -Recurse -File -ErrorAction SilentlyContinue |
     Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue |
     Select-Object Count, Sum
 }
@@ -719,7 +749,11 @@ function hack-server {
 }
 
 function my-hack-server {
-    ssh -o "SetEnv SECRET=password" root@lsd.segfault.net
+    if (-not $env:SEGFAULT_SECRET) {
+        Write-Warning 'Set SEGFAULT_SECRET before connecting (no secret is stored in this profile).'
+        return
+    }
+    ssh -o "SetEnv SECRET=$env:SEGFAULT_SECRET" root@lsd.segfault.net
 }
 # ----------------------------------------------
 # Clipboard Management
@@ -737,7 +771,9 @@ function Get-ClipboardContent {
 # Environment Path Management
 # ----------------------------------------------
 function Get-PathEnvironment {
-    $env:Path -split ';' | Where-Object { $_ } | Sort-Object
+    $rawPath = if ($env:Path) { $env:Path } else { $env:PATH }
+    if (-not $rawPath) { return }
+    $rawPath -split [System.IO.Path]::PathSeparator | Where-Object { $_ } | Sort-Object -Unique
 }
 
 function Add-PathEnvironment {
@@ -793,19 +829,33 @@ function venv {
         [switch]$Install
     )
 
-    if (-not (Test-Path $Name)) {
-        python -m venv $Name
-        Write-Host "Created virtual environment: $Name" -ForegroundColor Green
+    $python = if (Get-Command python -ErrorAction SilentlyContinue) { 'python' } elseif (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } else { $null }
+    if (-not $python) {
+        Write-Error 'Python was not found on PATH.'
+        return
+    }
 
-        if ($Install) {
-            & "./$Name/Scripts/activate"
-            if (Test-Path "requirements.txt") {
-                pip install -r requirements.txt
-                Write-Host "Installed requirements from requirements.txt" -ForegroundColor Green
-            }
-        }
+    $activate = if ($IsWindows) {
+        Join-Path $Name 'Scripts/Activate.ps1'
     } else {
-        & "./$Name/Scripts/activate"
+        Join-Path $Name 'bin/Activate.ps1'
+    }
+
+    if (-not (Test-Path -LiteralPath $Name)) {
+        & $python -m venv $Name
+        Write-Host "Created virtual environment: $Name" -ForegroundColor Green
+    }
+
+    if (-not (Test-Path -LiteralPath $activate)) {
+        Write-Error "Activation script not found: $activate"
+        return
+    }
+
+    & $activate
+
+    if ($Install -and (Test-Path -LiteralPath 'requirements.txt')) {
+        pip install -r requirements.txt
+        Write-Host 'Installed requirements from requirements.txt' -ForegroundColor Green
     }
 }
 
@@ -853,16 +903,17 @@ function Find-InFile {
     )
 
     $params = @{
-        Path = "$Path\*.$Extension"
-        Recurse = $true
-        ErrorAction = "SilentlyContinue"
+        Path        = $Path
+        Recurse     = $true
+        File        = $true
+        ErrorAction = 'SilentlyContinue'
     }
 
-    if ($CaseSensitive) {
-        Get-ChildItem @params | Select-String -Pattern $Pattern -CaseSensitive
-    } else {
-        Get-ChildItem @params | Select-String -Pattern $Pattern
+    if ($Extension -and $Extension -ne '*') {
+        $params.Filter = "*.$($Extension.TrimStart('.'))"
     }
+
+    Get-ChildItem @params | Select-String -Pattern $Pattern -CaseSensitive:$CaseSensitive
 }
 
 # ----------------------------------------------
@@ -870,36 +921,44 @@ function Find-InFile {
 # ----------------------------------------------
 function Clear-TempFiles {
     $tempFolders = @(
-        "$env:TEMP",
-        "$env:SystemRoot\Temp",
-        "$env:SystemRoot\Prefetch"
+        [System.IO.Path]::GetTempPath(),
+        $(if ($env:SystemRoot) { Join-Path $env:SystemRoot 'Temp' }),
+        $(if ($env:SystemRoot) { Join-Path $env:SystemRoot 'Prefetch' })
     )
 
     foreach ($folder in $tempFolders) {
-        if (Test-Path $folder) {
-            Remove-Item -Path "$folder\*" -Force -Recurse -ErrorAction SilentlyContinue
+        if ($folder -and (Test-Path -LiteralPath $folder)) {
+            Get-ChildItem -LiteralPath $folder -Force -ErrorAction SilentlyContinue |
+                Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
             Write-Host "Cleaned: $folder" -ForegroundColor Green
         }
     }
 }
 
 function Start-SystemMaintenance {
+    [CmdletBinding()]
+    param(
+        [switch]$Repair
+    )
+
     Write-Host "Starting system maintenance..." -ForegroundColor Cyan
 
-    # Clear DNS Cache
-    ipconfig /flushdns
-    Write-Host "DNS cache cleared" -ForegroundColor Green
+    if (Get-Command ipconfig -ErrorAction SilentlyContinue) {
+        ipconfig /flushdns | Out-Null
+        Write-Host "DNS cache cleared" -ForegroundColor Green
+    }
 
-    # Clear Temp Files
     Clear-TempFiles
 
-    # Run Disk Cleanup
-    cleanmgr /sagerun:1
+    if ($IsWindows -and (Get-Command cleanmgr -ErrorAction SilentlyContinue)) {
+        cleanmgr /sagerun:1
+    }
 
-    # Check Disk Health
-    Get-Volume | Where-Object { $_.DriveLetter } | ForEach-Object {
-        Write-Host "Checking drive $($_.DriveLetter):" -ForegroundColor Cyan
-        chkdsk $($_.DriveLetter): /f /r
+    if ($Repair -and $IsWindows -and (Get-Command chkdsk -ErrorAction SilentlyContinue)) {
+        Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter } | ForEach-Object {
+            Write-Host "Checking drive $($_.DriveLetter):" -ForegroundColor Cyan
+            chkdsk "$($_.DriveLetter):" /f /r
+        }
     }
 
     Write-Host "System maintenance completed!" -ForegroundColor Green
@@ -1021,10 +1080,19 @@ function Set-TerminalBackground {
         [string]$Color
     )
 
-    $settings = Get-Content "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json" | ConvertFrom-Json
-    $settings.profiles.defaults.background = $Color
-    $settings | ConvertTo-Json -Depth 32 | Set-Content "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
-    Write-Host "Terminal background color updated. Please restart terminal to apply changes." -ForegroundColor Green
+    $settingsPath = Get-WindowsTerminalSettingsPath
+    if (-not $settingsPath) {
+        Write-Warning 'Windows Terminal settings.json was not found.'
+        return
+    }
+
+    $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+    if (-not $settings.profiles.defaults) {
+        $settings.profiles | Add-Member -NotePropertyName defaults -NotePropertyValue ([PSCustomObject]@{}) -Force
+    }
+    $settings.profiles.defaults | Add-Member -NotePropertyName background -NotePropertyValue $Color -Force
+    $settings | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $settingsPath -Encoding UTF8
+    Write-Host 'Terminal background color updated. Please restart terminal to apply changes.' -ForegroundColor Green
 }
 
 function New-TerminalProfile {
@@ -1035,17 +1103,23 @@ function New-TerminalProfile {
         [string]$Icon = "🚀"
     )
 
-    $settings = Get-Content "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json" | ConvertFrom-Json
-    $newProfile = @{
-        name = $Name
-        commandline = $Command
-        icon = $Icon
-        hidden = $false
+    $settingsPath = Get-WindowsTerminalSettingsPath
+    if (-not $settingsPath) {
+        Write-Warning 'Windows Terminal settings.json was not found.'
+        return
     }
 
-    $settings.profiles.list += $newProfile
-    $settings | ConvertTo-Json -Depth 32 | Set-Content "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
-    Write-Host "New terminal profile added. Please restart terminal to apply changes." -ForegroundColor Green
+    $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+    $newProfile = [PSCustomObject]@{
+        name        = $Name
+        commandline = $Command
+        icon        = $Icon
+        hidden      = $false
+    }
+
+    $settings.profiles.list = @($settings.profiles.list) + $newProfile
+    $settings | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $settingsPath -Encoding UTF8
+    Write-Host 'New terminal profile added. Please restart terminal to apply changes.' -ForegroundColor Green
 }
 
 # ----------------------------------------------
@@ -1100,10 +1174,41 @@ function git-sync {
 # Network Diagnostics
 # ----------------------------------------------
 function Test-NetworkSpeed {
-    Write-Host "Testing download speed..." -ForegroundColor Yellow
-    $speedTest = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py' -OutFile "$env:TEMP\speedtest.py"
-    python "$env:TEMP\speedtest.py" --simple
-    Remove-Item "$env:TEMP\speedtest.py"
+    [CmdletBinding()]
+    param(
+        [string]$Url = 'https://speed.cloudflare.com/__down?bytes=25000000'
+    )
+
+    if (Get-Command speedtest -ErrorAction SilentlyContinue) {
+        speedtest --simple
+        return
+    }
+
+    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+    if (-not $curl) { $curl = Get-Command curl -ErrorAction SilentlyContinue }
+
+    Write-Host 'Testing download speed...' -ForegroundColor Yellow
+
+    if ($curl) {
+        $nullDevice = if ($IsWindows) { 'NUL' } else { '/dev/null' }
+        $output = & $curl.Source -sL -o $nullDevice -w '%{speed_download} %{time_total}' $Url
+        if ($LASTEXITCODE -eq 0 -and $output) {
+            $parts = $output -split '\s+'
+            $mbps = [math]::Round(([double]$parts[0] * 8) / 1e6, 2)
+            Write-Host ("Download speed: {0} Mbps ({1}s)" -f $mbps, $parts[1]) -ForegroundColor Green
+            return
+        }
+    }
+
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 30
+        $sw.Stop()
+        $mbps = [math]::Round((($response.RawContentLength * 8) / 1e6) / $sw.Elapsed.TotalSeconds, 2)
+        Write-Host "Download speed: $mbps Mbps" -ForegroundColor Green
+    } catch {
+        Write-Error "Speed test failed: $_"
+    }
 }
 
 function Test-Ports {
@@ -1490,8 +1595,8 @@ function Compare-Directories {
         return
     }
 
-    $dir1 = Get-ChildItem -Path $Path1 -Recurse
-    $dir2 = Get-ChildItem -Path $Path2 -Recurse
+    $dir1 = Get-ChildItem -Path $Path1 -Recurse -File -ErrorAction SilentlyContinue
+    $dir2 = Get-ChildItem -Path $Path2 -Recurse -File -ErrorAction SilentlyContinue
 
     $comparison = Compare-Object -ReferenceObject $dir1 -DifferenceObject $dir2 -Property Name, Length
 
@@ -1526,6 +1631,11 @@ function Sync-Directories {
         return
     }
 
+    if (-not (Get-Command robocopy -ErrorAction SilentlyContinue)) {
+        Write-Error 'Sync-Directories uses robocopy, which is only available on Windows.'
+        return
+    }
+
     $robocopyArgs = @(
         $Source
         $Destination
@@ -1555,40 +1665,50 @@ function Sync-Directories {
 function Watch-Performance {
     param(
         [int]$Seconds = 5,
+        [int]$Count = 0,
         [switch]$Export
     )
 
-    $data = @()
-
-    while ($true) {
-        $cpu = (Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue
-        $memory = (Get-Counter '\Memory\Available MBytes').CounterSamples.CookedValue
-        $disk = (Get-Counter '\PhysicalDisk(_Total)\% Disk Time').CounterSamples.CookedValue
-
-        $timestamp = Get-Date
-        $metrics = [PSCustomObject]@{
-            Time = $timestamp
-            CPU = [math]::Round($cpu, 2)
-            MemoryAvailable = [math]::Round($memory, 2)
-            DiskUsage = [math]::Round($disk, 2)
-        }
-
-        $data += $metrics
-
-        Clear-Host
-        Write-Host "Performance Monitor (Ctrl+C to stop)" -ForegroundColor Cyan
-        Write-Host "----------------------------------------" -ForegroundColor Cyan
-        Write-Host "CPU Usage: $($metrics.CPU)%" -ForegroundColor $(if ($metrics.CPU -gt 80) { "Red" } else { "Green" })
-        Write-Host "Memory Available: $($metrics.MemoryAvailable) MB" -ForegroundColor $(if ($metrics.MemoryAvailable -lt 1000) { "Red" } else { "Green" })
-        Write-Host "Disk Usage: $($metrics.DiskUsage)%" -ForegroundColor $(if ($metrics.DiskUsage -gt 80) { "Red" } else { "Green" })
-
-        Start-Sleep -Seconds $Seconds
+    if (-not (Get-Command Get-Counter -ErrorAction SilentlyContinue)) {
+        Write-Error 'Get-Counter is only available on Windows.'
+        return
     }
 
-    if ($Export) {
-        $exportPath = "PerformanceLog_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
-        $data | Export-Csv -Path $exportPath -NoTypeInformation
-        Write-Host "Performance data exported to: $exportPath" -ForegroundColor Green
+    $data = [System.Collections.Generic.List[object]]::new()
+    $iterations = 0
+
+    try {
+        while ($true) {
+            $cpu = (Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue
+            $memory = (Get-Counter '\Memory\Available MBytes').CounterSamples.CookedValue
+            $disk = (Get-Counter '\PhysicalDisk(_Total)\% Disk Time').CounterSamples.CookedValue
+
+            $metrics = [PSCustomObject]@{
+                Time            = Get-Date
+                CPU             = [math]::Round($cpu, 2)
+                MemoryAvailable = [math]::Round($memory, 2)
+                DiskUsage       = [math]::Round($disk, 2)
+            }
+
+            $data.Add($metrics)
+            $iterations++
+
+            Clear-Host
+            Write-Host "Performance Monitor (Ctrl+C to stop)" -ForegroundColor Cyan
+            Write-Host "----------------------------------------" -ForegroundColor Cyan
+            Write-Host "CPU Usage: $($metrics.CPU)%" -ForegroundColor $(if ($metrics.CPU -gt 80) { "Red" } else { "Green" })
+            Write-Host "Memory Available: $($metrics.MemoryAvailable) MB" -ForegroundColor $(if ($metrics.MemoryAvailable -lt 1000) { "Red" } else { "Green" })
+            Write-Host "Disk Usage: $($metrics.DiskUsage)%" -ForegroundColor $(if ($metrics.DiskUsage -gt 80) { "Red" } else { "Green" })
+
+            if ($Count -gt 0 -and $iterations -ge $Count) { break }
+            Start-Sleep -Seconds $Seconds
+        }
+    } finally {
+        if ($Export -and $data.Count -gt 0) {
+            $exportPath = "PerformanceLog_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+            $data | Export-Csv -Path $exportPath -NoTypeInformation
+            Write-Host "Performance data exported to: $exportPath" -ForegroundColor Green
+        }
     }
 }
 
@@ -1672,20 +1792,27 @@ function ssh-keygen {
         [string]$Comment = "$env:USERNAME@$env:COMPUTERNAME"
     )
 
-    $sshPath = "$env:USERPROFILE\.ssh"
+    $sshPath = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.ssh'
 
-    # Create .ssh directory if it doesn't exist
-    if (-not (Test-Path $sshPath)) {
-        New-Item -ItemType Directory -Path $sshPath
+    if (-not (Test-Path -LiteralPath $sshPath)) {
+        New-Item -ItemType Directory -Path $sshPath -Force | Out-Null
     }
 
-    # Generate key pair
-    ssh-keygen.exe -t rsa -b 4096 -C $Comment -f "$sshPath\$Name"
+    $sshKeygen = Get-Command ssh-keygen.exe -CommandType Application -ErrorAction SilentlyContinue
+    if (-not $sshKeygen) {
+        $sshKeygen = Get-Command ssh-keygen -CommandType Application -ErrorAction SilentlyContinue
+    }
+    if (-not $sshKeygen) {
+        Write-Error 'ssh-keygen was not found on PATH.'
+        return
+    }
 
-    # Display public key
-    if (Test-Path "$sshPath\$Name.pub") {
+    & $sshKeygen.Source -t rsa -b 4096 -C $Comment -f (Join-Path $sshPath $Name)
+
+    $publicKey = Join-Path $sshPath "$Name.pub"
+    if (Test-Path -LiteralPath $publicKey) {
         Write-Host "`nPublic Key:" -ForegroundColor Yellow
-        Get-Content "$sshPath\$Name.pub"
+        Get-Content -LiteralPath $publicKey
     }
 }
 
@@ -1745,7 +1872,7 @@ function Analyze-LogFile {
         Write-Host "Errors: $errorCount" -ForegroundColor Red
         Write-Host "Warnings: $warnCount" -ForegroundColor Yellow
         Write-Host "Info: $infoCount" -ForegroundColor Green
-        Write-Host "Total Lines: $($logs.Count)" -ForegroundColor White
+        Write-Host "Total Lines: $(@($logs).Count)" -ForegroundColor White
     } else {
         $logs | ForEach-Object {
             switch -Regex ($_) {
@@ -1769,10 +1896,11 @@ function Measure-CodeQuality {
     )
 
     # Check for required tools
-    if (-not (Get-Command PSScriptAnalyzer -ErrorAction SilentlyContinue)) {
-        Write-Warning "PSScriptAnalyzer not found. Install with: Install-Module -Name PSScriptAnalyzer -Force"
+    if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
+        Write-Warning 'PSScriptAnalyzer not found. Install with: Install-Module -Name PSScriptAnalyzer -Force'
         return
     }
+    Import-Module PSScriptAnalyzer -ErrorAction SilentlyContinue
 
     Write-Host "Analyzing code quality..." -ForegroundColor Cyan
 
@@ -1895,6 +2023,12 @@ Utils
     Analyze-LogFile    | Analyze logs
     hack-server        | Connect to segfault
     Get-EnhancedHistory | Show command history
+    mkcd               | Create and enter a directory
+
+Profile
+    reload             | Reload the PowerShell profile
+    ep                 | Edit the profile
+    pstats             | Show profile load statistics
 "@
 
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
@@ -2140,260 +2274,81 @@ function Build-And-Run {
 # ...existing code...
 # ...existing code...
 
-# Show help message when script is loaded
-Write-ColoredMessage "`nC++ Build Script loaded successfully!" "Green"
-Write-ColoredMessage "Use 'Build-And-Run -Help' to see available commands." "Yellow"
-Write-ColoredMessage "Example: Build-And-Run -Clean -Config Release`n" "Gray"
+# ----------------------------------------------
+# Profile helpers
+# ----------------------------------------------
+function Reload-Profile {
+    [CmdletBinding()]
+    param()
+    . $PROFILE
+}
+Set-Alias -Name reload -Value Reload-Profile
+
+function Edit-Profile {
+    [CmdletBinding()]
+    param()
+    if (Get-Command code -ErrorAction SilentlyContinue) {
+        code $PROFILE
+        return
+    }
+    if ($env:EDITOR) {
+        & $env:EDITOR $PROFILE
+        return
+    }
+    Write-Warning "Set EDITOR or install VS Code to edit $PROFILE."
+}
+Set-Alias -Name ep -Value Edit-Profile
+
+function Get-ProfileStats {
+    [CmdletBinding()]
+    param()
+    [PSCustomObject]@{
+        ProfilePath   = $PROFILE
+        LoadTimeMs    = [math]::Round($script:ZeroAccessStart.Elapsed.TotalMilliseconds, 1)
+        Functions     = (Get-ChildItem Function: | Measure-Object).Count
+        Aliases       = (Get-ChildItem Alias: | Measure-Object).Count
+        PSVersion     = $PSVersionTable.PSVersion.ToString()
+        Theme         = Get-ZeroAccessThemePath
+        OhMyPosh      = [bool](Get-Command oh-my-posh -ErrorAction SilentlyContinue)
+        ModulesLoaded = (Get-Module | Select-Object -ExpandProperty Name) -join ', '
+    }
+}
+Set-Alias -Name pstats -Value Get-ProfileStats
+
+function mkcd {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    Set-Location -LiteralPath $Path
+}
+Set-Alias -Name mcd -Value mkcd
 
 # ----------------------------------------------
-# Startup Message
+# Startup summary (no external process, no pyfiglet)
 # ----------------------------------------------
-$loadTime = (Get-Date) - $profileLoadStart
-$loadTimeFormatted = if ($loadTime.TotalMilliseconds -lt 1000) {
-    "$([math]::Round($loadTime.TotalMilliseconds))ms"
-} else {
-    "$([math]::Round($loadTime.TotalSeconds,2))s"
+$script:ZeroAccessStart.Stop()
+$loadMs = [math]::Round($script:ZeroAccessStart.Elapsed.TotalMilliseconds)
+
+if (-not $script:ZeroAccessQuiet) {
+    $width = try { $Host.UI.RawUI.WindowSize.Width } catch { 80 }
+    if ($width -ge 60) {
+        Write-Host ''
+        Write-Host '  ⚡ ZeroAccess' -ForegroundColor Green -NoNewline
+        Write-Host "  ·  PowerShell $($PSVersionTable.PSVersion.Major)" -ForegroundColor DarkGray
+        Write-Host '  Type ' -NoNewline -ForegroundColor DarkGray
+        Write-Host 'h' -NoNewline -ForegroundColor Green
+        Write-Host ' for commands  ·  ' -NoNewline -ForegroundColor DarkGray
+        Write-Host 'reload' -NoNewline -ForegroundColor Green
+        Write-Host ' to refresh  ·  ' -NoNewline -ForegroundColor DarkGray
+        Write-Host 'pstats' -NoNewline -ForegroundColor Green
+        Write-Host ' for load stats' -ForegroundColor DarkGray
+        Write-Host "  Loaded in ${loadMs}ms" -ForegroundColor DarkGray
+        Write-Host ''
+    } else {
+        Write-Host "⚡ ZeroAccess ready in ${loadMs}ms" -ForegroundColor DarkGray
+    }
 }
 
-try {
-    python -c @"
-import pyfiglet
-from colorama import Fore, Style, init
-import shutil
-
-init(autoreset=True)
-
-font = 'larry3d'  # 👑 Visually stunning 3D font
-width = shutil.get_terminal_size().columns
-banner = pyfiglet.figlet_format('ZeroAccess', font=font, width=width)
-
-lines = banner.splitlines()
-for line in lines:
-    centered = line.center(width)
-    print(Fore.LIGHTGREEN_EX + Style.BRIGHT + centered)
-"@
-}
-catch {
-    Write-Host ""
-    Write-Host "╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮" -ForegroundColor Green
-    Write-Host "┃        ZeroAccess ⚡        ┃" -ForegroundColor Green
-    Write-Host "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯" -ForegroundColor Green
-}
-
-
-Write-Host "Running on $([System.Environment]::OSVersion.VersionString)" -ForegroundColor DarkGray
-Write-Host "Profile loaded from $PROFILE" -ForegroundColor DarkGray
-Write-Host "Profile loaded in $loadTimeFormatted" -ForegroundColor DarkGray
-
-Write-Host "`nAvailable commands:" -ForegroundColor Cyan
-
-# Help Menu
-Write-Host "`nHelp Menu:" -ForegroundColor Yellow
-Write-Host "  h, help-menu     " -NoNewline -ForegroundColor Green
-Write-Host "- Interactive command help using FZF"
-
-# # Theme and Git
-# Write-Host "`nTheme and Git:" -ForegroundColor Yellow
-# Write-Host "  theme           " -NoNewline -ForegroundColor Green
-# Write-Host "- Switch Oh My Posh themes using FZF"
-# Write-Host "  git-menu        " -NoNewline -ForegroundColor Green
-# Write-Host "- Interactive Git command selection using FZF"
-
-# # Build Tools
-# Write-Host "`nBuild Tools:" -ForegroundColor Yellow
-# Write-Host "  Build-And-Run   " -NoNewline -ForegroundColor Green
-# Write-Host "- Build and run C++ CMake projects"
-# Write-Host "    -Clean        " -NoNewline -ForegroundColor DarkGray
-# Write-Host "- Clean build directory before building"
-# Write-Host "    -Config X     " -NoNewline -ForegroundColor DarkGray
-# Write-Host "- Build with specific configuration (Debug/Release)"
-# Write-Host "    -Debug        " -NoNewline -ForegroundColor DarkGray
-# Write-Host "- Build and run with debugger"
-# Write-Host "  Show-BuildHelp  " -NoNewline -ForegroundColor Green
-# Write-Host "- Display build help message"
-
-# # Network Tools
-# Write-Host "`nNetwork Tools:" -ForegroundColor Yellow
-# Write-Host "  Get-NetworkInfo " -NoNewline -ForegroundColor Green
-# Write-Host "- Display comprehensive network information"
-# Write-Host "    -IPOnly       " -NoNewline -ForegroundColor DarkGray
-# Write-Host "- Return only IP addresses"
-# Write-Host "    -Detailed     " -NoNewline -ForegroundColor DarkGray
-# Write-Host "- Show detailed network info"
-# Write-Host "  netinfo         " -NoNewline -ForegroundColor Green
-# Write-Host "- Display network adapter information"
-# Write-Host "  ports           " -NoNewline -ForegroundColor Green
-# Write-Host "- List open ports"
-
-# # System Information
-# Write-Host "`nSystem Information:" -ForegroundColor Yellow
-# Write-Host "  size            " -NoNewline -ForegroundColor Green
-# Write-Host "- Calculate total size of files in current directory"
-# Write-Host "  cpuinfo         " -NoNewline -ForegroundColor Green
-# Write-Host "- Display CPU information"
-# Write-Host "  raminfo         " -NoNewline -ForegroundColor Green
-# Write-Host "- Display RAM information"
-# Write-Host "  sysinfo         " -NoNewline -ForegroundColor Green
-# Write-Host "- Display system information"
-# Write-Host "  check-disk      " -NoNewline -ForegroundColor Green
-# Write-Host "- Check disk usage"
-
-# # File Management
-# Write-Host "`nFile Management:" -ForegroundColor Yellow
-# Write-Host "  l, la, ll, lsr, lsrh " -NoNewline -ForegroundColor Green
-# Write-Host "- List files in current directory"
-# Write-Host "  Find-File       " -NoNewline -ForegroundColor Green
-# Write-Host "- Search for files by name pattern"
-# Write-Host "  Find-InFile     " -NoNewline -ForegroundColor Green
-# Write-Host "- Search for text within files"
-# Write-Host "  Compare-Directories " -NoNewline -ForegroundColor Green
-# Write-Host "- Compare contents of two directories"
-# Write-Host "  Sync-Directories " -NoNewline -ForegroundColor Green
-# Write-Host "- Sync directories using robocopy"
-
-# # Clipboard and Path
-# Write-Host "`nClipboard and Path:" -ForegroundColor Yellow
-# Write-Host "  Set-ClipboardPath " -NoNewline -ForegroundColor Green
-# Write-Host "- Copy current path to clipboard"
-# Write-Host "  Get-ClipboardContent " -NoNewline -ForegroundColor Green
-# Write-Host "- Display clipboard content"
-# Write-Host "  Get-PathEnvironment " -NoNewline -ForegroundColor Green
-# Write-Host "- List PATH entries"
-# Write-Host "  Add-PathEnvironment " -NoNewline -ForegroundColor Green
-# Write-Host "- Add new PATH entry"
-
-# # Docker Management
-# Write-Host "`nDocker Management:" -ForegroundColor Yellow
-# Write-Host "  docker-clean    " -NoNewline -ForegroundColor Green
-# Write-Host "- Clean Docker system"
-# Write-Host "  docker-stop-all " -NoNewline -ForegroundColor Green
-# Write-Host "- Stop all containers"
-# Write-Host "  docker-stats    " -NoNewline -ForegroundColor Green
-# Write-Host "- Show Docker statistics"
-
-# # Kubernetes Management
-# Write-Host "`nKubernetes Management:" -ForegroundColor Yellow
-# Write-Host "  k8s-status      " -NoNewline -ForegroundColor Green
-# Write-Host "- Show Kubernetes cluster status"
-# Write-Host "  k8s-cleanup     " -NoNewline -ForegroundColor Green
-# Write-Host "- Clean up failed and evicted pods"
-
-# # Cloud Tools
-# Write-Host "`nCloud Tools:" -ForegroundColor Yellow
-# Write-Host "  cloud-login     " -NoNewline -ForegroundColor Green
-# Write-Host "- Login to cloud provider (azure/aws/gcp)"
-# Write-Host "  az-resources    " -NoNewline -ForegroundColor Green
-# Write-Host "- List Azure resources and costs"
-
-# # Security Tools
-# Write-Host "`nSecurity Tools:" -ForegroundColor Yellow
-# Write-Host "  Test-PasswordStrength " -NoNewline -ForegroundColor Green
-# Write-Host "- Analyze password strength"
-# Write-Host "  Get-FileHash256       " -NoNewline -ForegroundColor Green
-# Write-Host "- Get file hash and check VirusTotal"
-
-# # Performance Monitoring
-# Write-Host "`nPerformance Monitoring:" -ForegroundColor Yellow
-# Write-Host "  Watch-Performance     " -NoNewline -ForegroundColor Green
-# Write-Host "- Monitor system performance in real-time"
-# Write-Host "  Get-TopProcesses      " -NoNewline -ForegroundColor Green
-# Write-Host "- Show top processes by CPU/Memory/DiskIO"
-
-# # Python Environment
-# Write-Host "`nPython Environment:" -ForegroundColor Yellow
-# Write-Host "  venv            " -NoNewline -ForegroundColor Green
-# Write-Host "- Create/activate Python virtual environment"
-# Write-Host "  venv-save       " -NoNewline -ForegroundColor Green
-# Write-Host "- Save requirements.txt from current venv"
-
-# # System Maintenance
-# Write-Host "`nSystem Maintenance:" -ForegroundColor Yellow
-# Write-Host "  Clear-TempFiles " -NoNewline -ForegroundColor Green
-# Write-Host "- Clean temporary files"
-# Write-Host "  Start-SystemMaintenance " -NoNewline -ForegroundColor Green
-# Write-Host "- Run system maintenance tasks"
-
-# # Package Management
-# Write-Host "`nPackage Management:" -ForegroundColor Yellow
-# Write-Host "  install         " -NoNewline -ForegroundColor Green
-# Write-Host "- Install package (winget/scoop/choco/pip/npm)"
-# Write-Host "  update          " -NoNewline -ForegroundColor Green
-# Write-Host "- Update packages from specified manager"
-
-# # Server Access
-# Write-Host "`nServer Access:" -ForegroundColor Yellow
-# Write-Host "  hack-server     " -NoNewline -ForegroundColor Green
-# Write-Host "- Connect to segfault.net"
-# Write-Host "  my-hack-server  " -NoNewline -ForegroundColor Green
-# Write-Host "- Connect to lsd.segfault.net"
-
-# # Process Management
-# Write-Host "`nProcess Management:" -ForegroundColor Yellow
-# Write-Host "  Get-ProcessDetails " -NoNewline -ForegroundColor Green
-# Write-Host "- Display detailed process information"
-# Write-Host "  Stop-ProcessByPort " -NoNewline -ForegroundColor Green
-# Write-Host "- Stop process using specific port"
-# Write-Host "  Watch-Process     " -NoNewline -ForegroundColor Green
-# Write-Host "- Monitor process in real-time"
-
-# # Windows Terminal
-# Write-Host "`nWindows Terminal:" -ForegroundColor Yellow
-# Write-Host "  Set-TerminalBackground " -NoNewline -ForegroundColor Green
-# Write-Host "- Change terminal background color"
-# Write-Host "  New-TerminalProfile   " -NoNewline -ForegroundColor Green
-# Write-Host "- Create new terminal profile"
-
-# # Enhanced Git Workflow
-# Write-Host "`nEnhanced Git Workflow:" -ForegroundColor Yellow
-# Write-Host "  git-branch-cleanup " -NoNewline -ForegroundColor Green
-# Write-Host "- Clean up merged branches"
-# Write-Host "  git-sync          " -NoNewline -ForegroundColor Green
-# Write-Host "- Sync current branch with remote"
-
-# # Network Diagnostics
-# Write-Host "`nNetwork Diagnostics:" -ForegroundColor Yellow
-# Write-Host "  Test-NetworkSpeed " -NoNewline -ForegroundColor Green
-# Write-Host "- Test internet speed"
-# Write-Host "  Test-Ports       " -NoNewline -ForegroundColor Green
-# Write-Host "- Check open ports on remote host"
-
-# # Windows Features
-# Write-Host "`nWindows Features:" -ForegroundColor Yellow
-# Write-Host "  Enable-WindowsFeature " -NoNewline -ForegroundColor Green
-# Write-Host "- Enable Windows optional feature"
-# Write-Host "  Get-WindowsFeatures   " -NoNewline -ForegroundColor Green
-# Write-Host "- List enabled Windows features"
-
-# # Development Tools
-# Write-Host "`nDevelopment Tools:" -ForegroundColor Yellow
-# Write-Host "  Start-DevEnvironment " -NoNewline -ForegroundColor Green
-# Write-Host "- Start development environment (web/python/node/dotnet)"
-# Write-Host "  New-Project         " -NoNewline -ForegroundColor Green
-# Write-Host "- Create new project with template"
-
-# # Backup Utilities
-# Write-Host "`nBackup Utilities:" -ForegroundColor Yellow
-# Write-Host "  Backup-Files  " -NoNewline -ForegroundColor Green
-# Write-Host "- Backup files to destination"
-# Write-Host "  Restore-Backup" -NoNewline -ForegroundColor Green
-# Write-Host "- Restore files from backup"
-
-# Write-Host "`nSSH Management:" -ForegroundColor Yellow
-# Write-Host "  ssh-config        " -NoNewline -ForegroundColor Green
-# Write-Host "- Manage SSH config file"
-# Write-Host "  ssh-keygen        " -NoNewline -ForegroundColor Green
-# Write-Host "- Generate SSH key pair"
-
-# Write-Host "`nLog Analysis:" -ForegroundColor Yellow
-# Write-Host "  Analyze-LogFile   " -NoNewline -ForegroundColor Green
-# Write-Host "- Analyze log files with filtering and statistics"
-
-# Write-Host "`nCode Quality:" -ForegroundColor Yellow
-# Write-Host "  Measure-CodeQuality " -NoNewline -ForegroundColor Green
-# Write-Host "- Analyze and fix code quality issues"
-
-# Write-Host "`nHistory:" -ForegroundColor Yellow
-# Write-Host "  Get-EnhancedHistory " -NoNewline -ForegroundColor Green
-# Write-Host "- Display enhanced command history"
-
-Write-Host "`nTip: Use FZF (Ctrl+R) for command history search" -ForegroundColor DarkGray
